@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pappagallo nella Foresta</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(to bottom, #2E8B57 0%, #228B22 50%, #006400 100%);
+            font-family: Arial, sans-serif;
+            text-align: center;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            display: inline-block;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #654321;
+            border-radius: 10px;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 30%, #228B22 70%, #006400 100%);
+            cursor: pointer;
+        }
+        
+        #ui {
+            background: rgba(139, 69, 19, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            color: white;
+        }
+        
+        .score {
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        button {
+            background: #FF4500;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background: #FF6347;
+        }
+        
+        #instructions {
+            background: rgba(139, 69, 19, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            color: white;
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(139, 69, 19, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            display: none;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <button onclick="startGame()">🦜 Inizia!</button>
+            <div class="score" style="margin-left: 20px;">Punteggio: <span id="score">0</span></div>
+        </div>
+        
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        
+        <div id="instructions">
+            🦜 <strong>Clicca ovunque o premi SPAZIO</strong> per far volare il pappagallo!<br>
+            Vola attraverso i varchi nelle scale di tronchi nella foresta pluviale!
+        </div>
+        
+        <div id="gameOver">
+            <h2>🦜 Game Over!</h2>
+            <p>Punteggio finale: <span id="finalScore">0</span></p>
+            <button onclick="startGame()">Riprova!</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverDiv = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+        
+        let game = {
+            player: { x: 100, y: 100, width: 35, height: 35, velocityY: 0, flying: false },
+            obstacles: [],
+            score: 0,
+            gameSpeed: 2,
+            running: false,
+            ground: canvas.height - 30
+        };
+        
+        const FLAP_FORCE = -6;
+        const GRAVITY = 0.25;
+        const GAP_SIZE = 120; // Dimensione del varco per passare
+        
+        function startGame() {
+            game = {
+                player: { x: 100, y: 100, width: 35, height: 35, velocityY: 0, flying: false },
+                obstacles: [],
+                score: 0,
+                gameSpeed: 2,
+                running: true,
+                ground: canvas.height - 30
+            };
+            
+            gameOverDiv.style.display = 'none';
+            scoreElement.textContent = '0';
+            gameLoop();
+        }
+        
+        function flap() {
+            if (!game.running) return;
+            game.player.velocityY = FLAP_FORCE;
+            game.player.flying = true;
+        }
+        
+        function createObstacle() {
+            const colors = ['#8B4513', '#A0522D', '#D2691E', '#CD853F', '#DEB887'];
+            const gapY = 80 + Math.random() * (canvas.height - 200); // Posizione del varco
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            
+            // Scala superiore (dall'alto fino al varco)
+            game.obstacles.push({
+                x: canvas.width,
+                y: 0,
+                width: 40,
+                height: gapY - GAP_SIZE/2,
+                color: color,
+                passed: false,
+                type: 'top'
+            });
+            
+            // Scala inferiore (dal varco fino al suolo)
+            game.obstacles.push({
+                x: canvas.width,
+                y: gapY + GAP_SIZE/2,
+                width: 40,
+                height: game.ground - (gapY + GAP_SIZE/2),
+                color: color,
+                passed: false,
+                type: 'bottom'
+            });
+        }
+        
+        function updatePlayer() {
+            // Gravity
+            game.player.velocityY += GRAVITY;
+            game.player.y += game.player.velocityY;
+            
+            // Boundaries
+            if (game.player.y < 0) {
+                game.player.y = 0;
+                game.player.velocityY = 0;
+            }
+            if (game.player.y >= game.ground - game.player.height) {
+                gameOver();
+            }
+        }
+        
+        function updateObstacles() {
+            for (let i = game.obstacles.length - 1; i >= 0; i--) {
+                game.obstacles[i].x -= game.gameSpeed;
+                
+                // Score only once per obstacle pair
+                if (!game.obstacles[i].passed && game.obstacles[i].x + game.obstacles[i].width < game.player.x && game.obstacles[i].type === 'top') {
+                    game.obstacles[i].passed = true;
+                    game.score += 10;
+                    scoreElement.textContent = game.score;
+                    game.gameSpeed += 0.05;
+                }
+                
+                if (game.obstacles[i].x + game.obstacles[i].width < 0) {
+                    game.obstacles.splice(i, 1);
+                }
+            }
+            
+            if (game.obstacles.length === 0 || game.obstacles[game.obstacles.length - 1].x < canvas.width - 250) {
+                createObstacle();
+            }
+        }
+        
+        function checkCollisions() {
+            // Il pappagallo può toccare i tronchi normalmente, muore solo se non riesce a passare nel varco
+            for (let obstacle of game.obstacles) {
+                if (game.player.x + 5 < obstacle.x + obstacle.width - 5 &&
+                    game.player.x + game.player.width - 5 > obstacle.x + 5 &&
+                    game.player.y + 5 < obstacle.y + obstacle.height - 5 &&
+                    game.player.y + game.player.height - 5 > obstacle.y + 5) {
+                    
+                    // Controlla se il pappagallo è nel mezzo del varco (zona sicura)
+                    const centerX = obstacle.x + obstacle.width / 2;
+                    const playerCenterX = game.player.x + game.player.width / 2;
+                    
+                    // Se il pappagallo è centrato orizzontalmente sull'ostacolo, controlla se è nel varco
+                    if (Math.abs(playerCenterX - centerX) < 30) {
+                        // Trova l'ostacolo superiore corrispondente per calcolare la posizione del varco
+                        let topObstacle = game.obstacles.find(obs => obs.type === 'top' && Math.abs(obs.x - obstacle.x) < 5);
+                        if (topObstacle) {
+                            const gapStart = topObstacle.height;
+                            const gapEnd = obstacle.y;
+                            
+                            // Se il pappagallo non è nel varco, game over
+                            if (game.player.y < gapStart || game.player.y + game.player.height > gapEnd) {
+                                gameOver();
+                                return;
+                            }
+                        }
+                    } else {
+                        // Se tocca i lati dell'ostacolo, è OK (può appoggiarvisi)
+                        continue;
+                    }
+                }
+            }
+        }
+        
+        function gameOver() {
+            game.running = false;
+            finalScoreElement.textContent = game.score;
+            gameOverDiv.style.display = 'block';
+        }
+        
+        function drawPlayer() {
+            const x = game.player.x;
+            const y = game.player.y;
+            const size = 35;
+            
+            // Corpo del pappagallo (verde brillante)
+            ctx.fillStyle = '#00FF00';
+            ctx.beginPath();
+            ctx.ellipse(x + size/2, y + size*0.6, size*0.35, size*0.25, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Testa (verde più chiaro)
+            ctx.fillStyle = '#32CD32';
+            ctx.beginPath();
+            ctx.arc(x + size*0.7, y + size*0.35, size*0.2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Becco (arancione)
+            ctx.fillStyle = '#FF8C00';
+            ctx.beginPath();
+            ctx.moveTo(x + size*0.85, y + size*0.35);
+            ctx.lineTo(x + size*0.95, y + size*0.4);
+            ctx.lineTo(x + size*0.85, y + size*0.45);
+            ctx.fill();
+            
+            // Ala (blu brillante)
+            ctx.fillStyle = '#0080FF';
+            ctx.beginPath();
+            ctx.ellipse(x + size*0.4, y + size*0.5, size*0.15, size*0.3, -0.3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Coda (rossa)
+            ctx.fillStyle = '#FF0000';
+            ctx.beginPath();
+            ctx.ellipse(x + size*0.1, y + size*0.6, size*0.15, size*0.1, 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Occhio
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(x + size*0.75, y + size*0.3, size*0.04, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pupilla bianca
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(x + size*0.76, y + size*0.29, size*0.02, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function drawObstacles() {
+            for (let obstacle of game.obstacles) {
+                // Gradiente per ogni tronco
+                const gradient = ctx.createLinearGradient(obstacle.x, 0, obstacle.x + obstacle.width, 0);
+                gradient.addColorStop(0, obstacle.color);
+                gradient.addColorStop(0.5, '#8B4513');
+                gradient.addColorStop(1, obstacle.color);
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                
+                // Dettagli del legno (anelli e texture)
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < obstacle.height; i += 20) {
+                    ctx.beginPath();
+                    ctx.moveTo(obstacle.x + 5, obstacle.y + i);
+                    ctx.lineTo(obstacle.x + obstacle.width - 5, obstacle.y + i);
+                    ctx.stroke();
+                }
+                
+                // Ombre sui lati
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.fillRect(obstacle.x, obstacle.y, 3, obstacle.height);
+                ctx.fillRect(obstacle.x + obstacle.width - 3, obstacle.y, 3, obstacle.height);
+            }
+        }
+        
+        function drawBackground() {
+            // Suolo della foresta
+            ctx.fillStyle = '#654321';
+            ctx.fillRect(0, game.ground, canvas.width, canvas.height - game.ground);
+            
+            // Erba e foglie sul suolo
+            ctx.fillStyle = '#228B22';
+            for (let i = 0; i < canvas.width; i += 15) {
+                ctx.fillRect(i, game.ground, 3, 8);
+                ctx.fillRect(i + 7, game.ground, 2, 6);
+            }
+        }
+        
+        function gameLoop() {
+            if (!game.running) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            updatePlayer();
+            updateObstacles();
+            checkCollisions();
+            
+            drawBackground();
+            drawObstacles();
+            drawPlayer();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        canvas.addEventListener('click', flap);
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                flap();
+            }
+        });
+        
+        // Start message
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🦜 Clicca "Inizia!" per volare nella foresta! 🌲', canvas.width/2, canvas.height/2);
+    </script>
+</body>
+</html>
